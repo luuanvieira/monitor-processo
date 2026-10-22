@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: monitor
+          POSTGRES_PASSWORD: monitor
+          POSTGRES_DB: monitor
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U monitor -d monitor"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: go.mod e go.sum em dia
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: Formatação e vet
+        run: |
+          test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+          go vet ./...
+
+      - name: Testes unitários (com detector de corrida)
+        run: go test -race ./...
+
+      - name: Testes de integração com PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgres://monitor:monitor@localhost:5432/monitor?sslmode=disable
+        run: go test -race -tags integracao -count=1 ./internal/armazenamento/postgres/
+
+      - name: Build da imagem Docker
+        run: docker build -t monitor-processo .

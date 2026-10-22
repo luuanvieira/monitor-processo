@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de Processo</title>
+<style>
+  /* Inspirado na ISA-101 (HMI de alto desempenho): tela em tons de cinza e
+     cor reservada para situações anormais, para o alarme saltar aos olhos. */
+  :root {
+    --fundo: #2b2f33; --painel: #353a3f; --borda: #4a5056; --texto: #e6e6e6;
+    --suave: #9aa3ab; --normal: #c9ced3;
+    --alta: #e5484d; --media: #f5a524; --baixa: #4aa3df; --ok: #46a758;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--texto); font-size: 14px; }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between;
+           padding: 12px 16px; border-bottom: 1px solid var(--borda); background: #24282c; }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--suave); margin: 0 0 10px; }
+  .kpis { display: flex; gap: 18px; flex-wrap: wrap; }
+  .kpi { display: flex; flex-direction: column; align-items: flex-end; }
+  .kpi b { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .kpi span { font-size: 11px; color: var(--suave); }
+  .kpi.ruim b { color: var(--alta); }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 16px; padding: 16px; }
+  /* No celular, os alarmes vêm primeiro: é o que o operador precisa ver. */
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } main > .coluna:last-child { order: -1; } }
+  section { background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; padding: 14px; }
+  .coluna { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  /* esquema da planta */
+  svg.esquema { width: 100%; height: auto; display: block; }
+  svg.esquema .equip { fill: none; stroke: var(--normal); stroke-width: 2; }
+  svg.esquema .linha { stroke: var(--suave); stroke-width: 3; fill: none; }
+  svg.esquema text { fill: var(--texto); font-size: 13px; }
+  svg.esquema .rotulo { fill: var(--suave); font-size: 11px; }
+  svg.esquema .valor { font-weight: 600; font-variant-numeric: tabular-nums; }
+  svg.esquema .caixa { fill: #2b2f33; stroke: var(--borda); }
+  svg.esquema .caixa.alta { stroke: var(--alta); stroke-width: 2.5; }
+  svg.esquema .caixa.media { stroke: var(--media); stroke-width: 2.5; }
+  svg.esquema .caixa.baixa { stroke: var(--baixa); stroke-width: 2.5; }
+
+  /* cartões de tag */
+  .tags { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .tag { border: 1px solid var(--borda); border-radius: 6px; padding: 10px; background: #2f3439; }
+  .tag.alta { border-color: var(--alta); } .tag.media { border-color: var(--media); } .tag.baixa { border-color: var(--baixa); }
+  .tag .topo { display: flex; justify-content: space-between; align-items: baseline; }
+  .tag .id { font-weight: 600; }
+  .tag .desc { color: var(--suave); font-size: 12px; margin: 2px 0 6px; min-height: 30px; }
+  .tag .val { font-size: 24px; font-variant-numeric: tabular-nums; }
+  .tag .un { color: var(--suave); font-size: 12px; margin-left: 4px; }
+  .tag canvas { width: 100%; height: 56px; display: block; margin-top: 6px; }
+  .tag .badges { display: flex; gap: 4px; flex-wrap: wrap; min-height: 20px; }
+  .badge { font-size: 11px; padding: 1px 6px; border-radius: 3px; color: #111; font-weight: 600; }
+  .badge.alta { background: var(--alta); } .badge.media { background: var(--media); } .badge.baixa { background: var(--baixa); }
+  .pisca { animation: pisca 1s steps(2, start) infinite; }
+  @keyframes pisca { to { visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) { .pisca { animation: none; text-decoration: underline; } }
+
+  /* tabelas */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+  th { color: var(--suave); font-weight: 500; font-size: 12px; }
+  td.p { width: 8px; padding: 0; }
+  td.tag-col { white-space: nowrap; }
+  td.p.alta { background: var(--alta); } td.p.media { background: var(--media); } td.p.baixa { background: var(--baixa); }
+  .vazio { color: var(--suave); padding: 10px 0; }
+  .tabela { max-height: 340px; overflow: auto; }
+
+  button, select { font: inherit; color: var(--texto); background: #454b51; border: 1px solid var(--borda);
+                   border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+  button:hover { background: #50575e; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--baixa); outline-offset: 1px; }
+  button.pequeno { padding: 2px 8px; font-size: 12px; }
+  .linha-acoes { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; }
+  .linha-acoes h2 { margin: 0; }
+  .falha { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--borda); }
+  .falha small { color: var(--suave); display: block; }
+  .falha .ctrl { display: flex; gap: 6px; }
+  .ativas li { margin-bottom: 6px; }
+  .ativas { padding-left: 18px; margin: 0 0 10px; }
+  .status { font-size: 12px; color: var(--suave); }
+  .status.on::before { content: "● "; color: var(--ok); }
+  .status.off::before { content: "● "; color: var(--alta); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Unidade de Reação R-101</h1>
+    <div class="status off" id="conexao">desconectado</div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><b id="k-ativos">–</b><span>alarmes ativos</span></div>
+    <div class="kpi"><b id="k-nrec">–</b><span>não reconhecidos</span></div>
+    <div class="kpi" id="k-taxa-box"><b id="k-taxa">–</b><span>ativações em 10 min</span></div>
+    <div class="kpi"><b id="relogio">–</b><span>horário da planta</span></div>
+  </div>
+</header>
+
+<main>
+  <div class="coluna">
+    <section aria-label="Esquema da planta">
+      <h2>Visão geral</h2>
+      <svg class="esquema" viewBox="0 0 720 230" role="img" aria-label="Tanque TQ-301 alimenta o reator R-101 pela bomba P-201">
+        <rect class="equip" x="40" y="40" width="120" height="150" rx="8"/>
+        <text x="100" y="215" text-anchor="middle">TQ-301</text>
+        <path class="linha" d="M160 170 H300"/>
+        <circle class="equip" cx="330" cy="170" r="28"/>
+        <path class="equip" d="M318 154 L346 170 L318 186 Z"/>
+        <text x="330" y="215" text-anchor="middle">P-201</text>
+        <path class="linha" d="M358 170 H470 V150"/>
+        <rect class="equip" x="470" y="30" width="170" height="170" rx="60"/>
+        <text x="555" y="225" text-anchor="middle">R-101</text>
+        <g id="esq-LT-301" transform="translate(52,85)"></g>
+        <g id="esq-FT-201" transform="translate(190,120)"></g>
+        <g id="esq-VT-501" transform="translate(272,80)"></g>
+        <g id="esq-TT-101" transform="translate(495,70)"></g>
+        <g id="esq-PT-101" transform="translate(495,128)"></g>
+      </svg>
+    </section>
+
+    <section aria-label="Instrumentos">
+      <h2>Instrumentos</h2>
+      <div class="tags" id="tags"></div>
+    </section>
+
+    <section aria-label="Histórico de eventos">
+      <h2>Histórico de eventos</h2>
+      <div class="tabela"><table>
+        <thead><tr><th></th><th>Horário</th><th>Tag</th><th>Tipo</th><th>Estado</th><th>Mensagem</th></tr></thead>
+        <tbody id="historico"></tbody>
+      </table></div>
+    </section>
+  </div>
+
+  <div class="coluna">
+    <section aria-label="Alarmes ativos">
+      <div class="linha-acoes">
+        <h2>Alarmes</h2>
+        <button id="rec-todos">Reconhecer todos</button>
+      </div>
+      <div class="tabela"><table>
+        <thead><tr><th></th><th>Tag</th><th>Tipo</th><th>Mensagem</th><th></th></tr></thead>
+        <tbody id="alarmes"></tbody>
+      </table></div>
+    </section>
+
+    <section aria-label="Simulador" id="painel-sim">
+      <h2>Simulador: injetar falhas</h2>
+      <ul class="ativas" id="falhas-ativas"></ul>
+      <div id="falhas"></div>
+      <div style="margin-top:10px"><button id="manutencao">Trocar rolamento da P-201</button></div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+const MAX_PONTOS = 600;
+const estado = { tags: [], serie: {}, ultimas: {}, alarmesPorTag: {} };
+const $ = (id) => document.getElementById(id);
+const fmtHora = (iso) => new Date(iso).toLocaleTimeString("pt-BR");
+const nomeEstado = {
+  ativo_nao_reconhecido: "ativo, não reconhecido",
+  ativo_reconhecido: "ativo, reconhecido",
+  retornou_nao_reconhecido: "normalizou, não reconhecido",
+  normal: "normal",
+};
+const pesoPrioridade = { alta: 0, media: 1, baixa: 2 };
+
+function el(tag, attrs = {}, ...filhos) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  for (const f of filhos) e.append(f instanceof Node ? f : document.createTextNode(String(f)));
+  return e;
+}
+
+async function api(caminho, opcoes) {
+  const r = await fetch(caminho, opcoes);
+  if (!r.ok && r.status !== 204) {
+    const corpo = await r.json().catch(() => ({}));
+    throw new Error(corpo.erro || r.statusText);
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+function casas(tag) { return tag.faixa_max - tag.faixa_min <= 10 ? 2 : 1; }
+
+function piorPrioridade(lista) {
+  return (lista || []).filter(a => a.estado !== "normal")
+    .sort((a, b) => pesoPrioridade[a.prioridade] - pesoPrioridade[b.prioridade])[0]?.prioridade || "";
+}
+
+// ---------- cartões e esquema ----------
+function montarTags() {
+  const box = $("tags");
+  box.replaceChildren();
+  for (const t of estado.tags) {
+    const card = el("div", { class: "tag", id: "card-" + t.id },
+      el("div", { class: "topo" }, el("span", { class: "id" }, t.id), el("span", { class: "badges", id: "badges-" + t.id })),
+      el("div", { class: "desc" }, t.descricao),
+      el("div", {}, el("span", { class: "val", id: "val-" + t.id }, "–"), el("span", { class: "un" }, t.unidade)),
+      el("canvas", { id: "graf-" + t.id, "aria-label": "Tendência de " + t.id }));
+    box.append(card);
+
+    const g = document.getElementById("esq-" + t.id);
+    if (g) {
+      g.innerHTML = `<rect class="caixa" id="esq-cx-${t.id}" width="92" height="40" rx="4"/>` +
+        `<text class="rotulo" x="8" y="15">${t.id}</text>` +
+        `<text class="valor" x="8" y="33" id="esq-val-${t.id}">–</text>`;
+    }
+  }
+}
+
+function atualizarValor(l) {
+  const t = estado.tags.find(x => x.id === l.tag);
+  if (!t) return;
+  estado.ultimas[l.tag] = l;
+  const texto = l.qualidade === "ruim" ? "FALHA" : l.valor.toFixed(casas(t));
+  $("val-" + t.id).textContent = texto;
+  const esq = document.getElementById("esq-val-" + t.id);
+  if (esq) esq.textContent = texto + (l.qualidade === "ruim" ? "" : " " + t.unidade);
+
+  const s = (estado.serie[l.tag] ||= []);
+  if (!s.length || new Date(l.momento) > new Date(s[s.length - 1].momento)) s.push(l);
+  if (s.length > MAX_PONTOS) s.splice(0, s.length - MAX_PONTOS);
+}
+
+function desenhar(t) {
+  const c = $("graf-" + t.id);
+  if (!c) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const pts = (estado.serie[t.id] || []).filter(p => p.qualidade !== "ruim");
+  if (pts.length < 2) return;
+
+  const lim = t.limites || {};
+  const vals = pts.map(p => p.valor).concat([lim.h, lim.l].filter(v => v !== undefined));
+  let min = Math.min(...vals), max = Math.max(...vals);
+  const folga = (max - min) * 0.1 || 1; min -= folga; max += folga;
+  const t0 = new Date(pts[0].momento).getTime(), t1 = new Date(pts[pts.length - 1].momento).getTime();
+  const x = (m) => (new Date(m).getTime() - t0) / Math.max(1, t1 - t0) * w;
+  const y = (v) => h - (v - min) / (max - min) * h;
+
+  const css = getComputedStyle(document.documentElement);
+  for (const [k, cor] of [["hh", "--alta"], ["h", "--media"], ["l", "--media"], ["ll", "--alta"]]) {
+    if (lim[k] === undefined || lim[k] < min || lim[k] > max) continue;
+    ctx.strokeStyle = css.getPropertyValue(cor); ctx.globalAlpha = 0.6; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(0, y(lim[k])); ctx.lineTo(w, y(lim[k])); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.setLineDash([]);
+  ctx.strokeStyle = css.getPropertyValue("--normal"); ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  pts.forEach((p, i) => i ? ctx.lineTo(x(p.momento), y(p.valor)) : ctx.moveTo(x(p.momento), y(p.valor)));
+  ctx.stroke();
+}
+
+// ---------- alarmes ----------
+async function carregarAlarmes() {
+  const r = await api("/api/alarmes");
+  $("k-ativos").textContent = r.ativos.filter(a => a.estado.startsWith("ativo")).length;
+  $("k-nrec").textContent = r.nao_reconhecidos;
+  $("k-taxa").textContent = r.ativacoes_10min;
+  $("k-taxa-box").classList.toggle("ruim", r.inundacao);
+  $("k-taxa-box").title = r.inundacao ? `Inundação de alarmes: mais de ${r.limite_inundacao} em 10 min` : "";
+
+  estado.alarmesPorTag = {};
+  for (const a of r.ativos) (estado.alarmesPorTag[a.tag] ||= []).push(a);
+
+  const corpo = $("alarmes");
+  corpo.replaceChildren();
+  if (!r.ativos.length) {
+    corpo.append(el("tr", {}, el("td", { colspan: 5, class: "vazio" }, "Nenhum alarme. Tudo normal.")));
+  }
+  for (const a of r.ativos) {
+    const naoRec = a.estado === "ativo_nao_reconhecido" || a.estado === "retornou_nao_reconhecido";
+    const botao = naoRec
+      ? el("button", { class: "pequeno", onclick: () => reconhecer(a.tag, a.tipo) }, "Reconhecer")
+      : el("span", { class: "status" }, "reconhecido");
+    corpo.append(el("tr", {},
+      el("td", { class: "p " + a.prioridade, title: "prioridade " + a.prioridade }),
+      el("td", { class: "tag-col" }, a.tag),
+      el("td", { class: a.estado === "ativo_nao_reconhecido" ? "pisca" : "" }, a.tipo),
+      el("td", {}, a.mensagem, el("br"), el("small", { class: "status" }, nomeEstado[a.estado] + " · desde " + fmtHora(a.ativado_em))),
+      el("td", {}, botao)));
+  }
+
+  for (const t of estado.tags) {
+    const lista = estado.alarmesPorTag[t.id] || [];
+    const pior = piorPrioridade(lista);
+    $("card-" + t.id).className = "tag " + pior;
+    const cx = document.getElementById("esq-cx-" + t.id);
+    if (cx) cx.setAttribute("class", "caixa " + pior);
+    const b = $("badges-" + t.id);
+    b.replaceChildren(...lista.map(a => el("span", {
+      class: "badge " + a.prioridade + (a.estado === "ativo_nao_reconhecido" ? " pisca" : ""),
+    }, a.tipo)));
+  }
+}
+
+async function carregarHistorico() {
+  const ev = await api("/api/alarmes/historico?limite=60");
+  const corpo = $("historico");
+  corpo.replaceChildren();
+  if (!ev.length) corpo.append(el("tr", {}, el("td", { colspan: 6, class: "vazio" }, "Sem eventos ainda.")));
+  for (const e of ev) {
+    corpo.append(el("tr", {},
+      el("td", { class: "p " + e.prioridade }), el("td", {}, fmtHora(e.momento)), el("td", {}, e.tag),
+      el("td", {}, e.tipo), el("td", {}, nomeEstado[e.estado] || e.estado), el("td", {}, e.mensagem)));
+  }
+}
+
+async function reconhecer(tag, tipo) {
+  try { await api(`/api/alarmes/${encodeURIComponent(tag)}/${encodeURIComponent(tipo)}/reconhecer`, { method: "POST" }); }
+  catch (e) { console.warn(e); }
+  carregarAlarmes(); carregarHistorico();
+}
+
+// ---------- simulador ----------
+async function carregarFalhas() {
+  let r;
+  try { r = await api("/api/simulador/falhas"); }
+  catch { $("painel-sim").hidden = true; return; }
+
+  const ativas = $("falhas-ativas");
+  ativas.replaceChildren(...(r.ativas.length ? r.ativas.map(f => el("li", {},
+    `${f.tipo}${f.tag ? " (" + f.tag + ")" : ""} desde ${fmtHora(f.desde)} `,
+    el("button", { class: "pequeno", onclick: () => removerFalha(f) }, "Encerrar"))) : [el("li", { class: "status" }, "Nenhuma falha ativa")]));
+
+  const box = $("falhas");
+  if (box.childElementCount) return; // botões já montados
+  for (const f of r.disponiveis) {
+    const ctrl = el("div", { class: "ctrl" });
+    let sel = null;
+    if (f.exige_tag) {
+      sel = el("select", { "aria-label": "Tag para " + f.tipo }, ...estado.tags.map(t => el("option", { value: t.id }, t.id)));
+      ctrl.append(sel);
+    }
+    ctrl.append(el("button", { class: "pequeno", onclick: () => ativarFalha(f.tipo, sel ? sel.value : "") }, "Injetar"));
+    box.append(el("div", { class: "falha" }, el("div", {}, el("b", {}, f.tipo), el("small", {}, f.descricao)), ctrl));
+  }
+}
+
+async function ativarFalha(tipo, tag) {
+  try { await api("/api/simulador/falhas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tipo, tag }) }); }
+  catch (e) { alert(e.message); }
+  carregarFalhas();
+}
+
+async function removerFalha(f) {
+  const q = f.tag ? "?tag=" + encodeURIComponent(f.tag) : "";
+  try { await api(`/api/simulador/falhas/${f.tipo}${q}`, { method: "DELETE" }); } catch (e) { console.warn(e); }
+  carregarFalhas();
+}
+
+// ---------- inicialização e tempo real ----------
+function conectar() {
+  const fonte = new EventSource("/api/stream");
+  fonte.onopen = () => { $("conexao").className = "status on"; $("conexao").textContent = "ao vivo"; carregarAlarmes(); };
+  fonte.onerror = () => { $("conexao").className = "status off"; $("conexao").textContent = "reconectando…"; };
+  fonte.addEventListener("leituras", (ev) => {
+    const lista = JSON.parse(ev.data);
+    lista.forEach(atualizarValor);
+    if (lista.length) $("relogio").textContent = fmtHora(lista[0].momento);
+  });
+  let pendente = false;
+  fonte.addEventListener("alarmes", () => {
+    if (pendente) return;
+    pendente = true;
+    setTimeout(() => { pendente = false; carregarAlarmes(); carregarHistorico(); }, 250);
+  });
+}
+
+async function iniciar() {
+  estado.tags = await api("/api/tags");
+  montarTags();
+  for (const t of estado.tags) if (t.ultima) atualizarValor(t.ultima);
+  await Promise.all(estado.tags.map(async (t) => {
+    const hist = await api(`/api/tags/${encodeURIComponent(t.id)}/leituras?minutos=10&limite=${MAX_PONTOS}`).catch(() => []);
+    estado.serie[t.id] = hist.concat(estado.serie[t.id] || []).slice(-MAX_PONTOS);
+  }));
+  await Promise.all([carregarAlarmes(), carregarHistorico(), carregarFalhas()]);
+  conectar();
+
+  $("rec-todos").onclick = async () => { await api("/api/alarmes/reconhecer-todos", { method: "POST" }); carregarAlarmes(); carregarHistorico(); };
+  $("manutencao").onclick = async () => { await api("/api/simulador/manutencao", { method: "POST" }); carregarFalhas(); };
+
+  const quadro = () => { estado.tags.forEach(desenhar); requestAnimationFrame(() => setTimeout(quadro, 500)); };
+  quadro();
+  setInterval(carregarFalhas, 5000);
+  setInterval(carregarAlarmes, 5000); // mantém "ativações em 10 min" atualizado
+}
+
+iniciar().catch((e) => { document.body.prepend(el("p", { style: "color:var(--alta);padding:16px" }, "Erro ao carregar: " + e.message)); });
+</script>
+</body>
+</html>

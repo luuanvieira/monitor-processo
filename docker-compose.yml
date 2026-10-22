@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: monitor
+      POSTGRES_PASSWORD: monitor
+      POSTGRES_DB: monitor
+    ports:
+      - "5432:5432"
+    volumes:
+      - dados:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monitor -d monitor"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  monitor:
+    build: .
+    environment:
+      DATABASE_URL: postgres://monitor:monitor@postgres:5432/monitor?sslmode=disable
+      SIM_VELOCIDADE: ${SIM_VELOCIDADE:-1}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  dados:

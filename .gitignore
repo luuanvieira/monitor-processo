@@ -1,0 +1,4 @@
+/monitor
+*.test
+*.out
+.env

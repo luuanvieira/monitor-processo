@@ -1,0 +1,63 @@
+[
+  {
+    "id": "TT-101",
+    "descricao": "Temperatura do reator R-101",
+    "unidade": "°C",
+    "faixa_min": 0,
+    "faixa_max": 150,
+    "limites": { "ll": 65, "l": 70, "h": 85, "hh": 90 },
+    "banda_morta": 0.5,
+    "atraso_ativacao": "5s",
+    "taxa_max_por_min": 3,
+    "janela_taxa": "1m",
+    "congelado_apos": "2m",
+    "ewma": { "lambda": 0.05, "l": 4, "aquecimento": 1800, "confirmacao": "3m", "desvio_minimo": 0.05 }
+  },
+  {
+    "id": "PT-101",
+    "descricao": "Pressão do reator R-101",
+    "unidade": "bar",
+    "faixa_min": 0,
+    "faixa_max": 6,
+    "limites": { "ll": 1.2, "l": 1.5, "h": 2.5, "hh": 2.8 },
+    "banda_morta": 0.05,
+    "atraso_ativacao": "5s",
+    "congelado_apos": "2m"
+  },
+  {
+    "id": "FT-201",
+    "descricao": "Vazão de alimentação do reator (bomba P-201)",
+    "unidade": "m³/h",
+    "faixa_min": 0,
+    "faixa_max": 30,
+    "limites": { "ll": 5, "l": 8, "h": 15, "hh": 17 },
+    "banda_morta": 0.3,
+    "atraso_ativacao": "10s",
+    "taxa_max_por_min": 4,
+    "janela_taxa": "30s",
+    "congelado_apos": "2m"
+  },
+  {
+    "id": "LT-301",
+    "descricao": "Nível do tanque pulmão TQ-301",
+    "unidade": "%",
+    "faixa_min": 0,
+    "faixa_max": 100,
+    "limites": { "ll": 10, "l": 20, "h": 85, "hh": 95 },
+    "banda_morta": 1,
+    "atraso_ativacao": "10s",
+    "congelado_apos": "5m"
+  },
+  {
+    "id": "VT-501",
+    "descricao": "Vibração do mancal da bomba P-201 (RMS)",
+    "unidade": "mm/s",
+    "faixa_min": 0,
+    "faixa_max": 20,
+    "limites": { "h": 4.5, "hh": 7.1 },
+    "banda_morta": 0.1,
+    "atraso_ativacao": "30s",
+    "congelado_apos": "5m",
+    "ewma": { "lambda": 0.05, "l": 4, "aquecimento": 1800, "confirmacao": "3m", "desvio_minimo": 0.02 }
+  }
+]
