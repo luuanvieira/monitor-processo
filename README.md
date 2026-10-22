@@ -1,8 +1,8 @@
-# Monitor de Processo Industrial
+# 🏭 Monitor de Processo Industrial
 
 Sistema de monitoramento e **gestão de alarmes** para uma unidade de processo simulada, escrito em **Go**. Um simulador gera as leituras dos instrumentos, um motor avalia as regras de alarme em tempo real, o histórico vai para o **PostgreSQL** e um dashboard web mostra tudo ao vivo por **Server-Sent Events**. Também dá para injetar falhas (perda de resfriamento, desarme de bomba, sensor travado…) e ver como o sistema reage.
 
-Trabalhei seis anos como operador de processos na indústria química e convivi com o principal problema desses sistemas: **alarme demais**. Quando tudo apita, o operador para de prestar atenção. Este projeto é a minha versão de como um sistema de alarmes deveria se comportar, seguindo as boas práticas da área (ISA-18.2, EEMUA 191 e ISA-101).
+Trabalhei seis anos como operador de processos numa planta de processamento de soja (DuPont/IFF), monitorando o processo por IHM. Um dos problemas mais conhecidos desses sistemas é o **excesso de alarmes**: quando tudo apita, o operador para de prestar atenção. Este projeto é a minha versão de como um sistema de alarmes deveria se comportar, seguindo as boas práticas da área (ISA-18.2, EEMUA 191 e ISA-101).
 
 ![Dashboard](docs/dashboard.png)
 
